@@ -9,7 +9,7 @@ import { loadDB } from './jsonDb'
  * soit un objet user { id, email, name }.
  */
 export async function requireAuth() {
-  const auth = headers().get('authorization') || ''
+  const auth = (await headers()).get('authorization') || ''
   const token = auth.replace(/Bearer\s+/i, '')
 
   if (!token) {
