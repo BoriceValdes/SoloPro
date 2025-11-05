@@ -4,8 +4,10 @@ import React, { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/context/AuthContext'
 
-export function withAuth<P>(Component: React.ComponentType<P>) {
-  function Protected(props: P) {
+export function withAuth<P extends object>(
+  WrappedComponent: React.ComponentType<P>
+) {
+  const Protected: React.FC<P> = (props) => {
     const { state } = useAuth()
     const router = useRouter()
 
@@ -30,8 +32,13 @@ export function withAuth<P>(Component: React.ComponentType<P>) {
       return null
     }
 
-    return <Component {...props} />
+    // ✅ ici les types sont clairs : P pour les props, pas d'erreur TS
+    return <WrappedComponent {...props} />
   }
+
+  Protected.displayName = `withAuth(${
+    WrappedComponent.displayName || WrappedComponent.name || 'Component'
+  })`
 
   return Protected
 }
