@@ -23,6 +23,9 @@ export default function AppShell({ children }: AppShellProps) {
           </div>
 
           <nav>
+            <Link href="/register" className="nav-link">
+            Créer un compte</Link>
+
             <Link href="/dashboard" className="nav-link">
               Dashboard
             </Link>
