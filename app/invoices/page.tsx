@@ -1,3 +1,4 @@
+// app/invoices/page.tsx
 'use client'
 
 import { useEffect, useState } from 'react'
@@ -26,17 +27,23 @@ function InvoicesPage() {
 
   const [businessId, setBusinessId] = useState<number | null>(null)
   const [invoices, setInvoices] = useState<Invoice[]>([])
+
   const [form, setForm] = useState<{
     clientId: string
     items: [InvoiceItemForm]
   }>({
     clientId: '1',
     items: [
-      { label: 'Prestation', qty: 1, unit_price_ht: 100, vat_rate: 0 }
+      {
+        label: 'Prestation',
+        qty: 1,
+        unit_price_ht: 100,
+        vat_rate: 0
+      }
     ]
   })
 
-  // Business
+  // Charger le business de l'utilisateur
   useEffect(() => {
     if (!token) return
 
@@ -50,6 +57,7 @@ function InvoicesPage() {
           const data = await res.json()
           setBusinessId(data.id)
         } else if (res.status === 404) {
+          // Aucun business → on le renvoie vers la page Mon business
           router.push('/business')
         } else {
           console.error('Erreur business:', await res.text())
@@ -60,7 +68,7 @@ function InvoicesPage() {
     })()
   }, [token, router])
 
-  // Invoices
+  // Charger les factures quand on a un business
   useEffect(() => {
     if (!token || businessId === null) return
 
@@ -79,6 +87,7 @@ function InvoicesPage() {
   async function addInvoice(e: React.FormEvent) {
     e.preventDefault()
     if (!token) return
+
     if (businessId === null) {
       alert("Aucun business. Va d'abord sur la page Mon business.")
       router.push('/business')
@@ -86,6 +95,7 @@ function InvoicesPage() {
     }
 
     const item = form.items[0]
+
     const res = await fetch('/api/invoices', {
       method: 'POST',
       headers: {
@@ -117,17 +127,22 @@ function InvoicesPage() {
 
   async function generatePdf(id: number) {
     if (!token) return
+
     const res = await fetch(`/api/invoices/${id}/pdf`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}` }
     })
-    if (res.ok) {
-      const data = await res.json()
-      if (data.url) window.open(data.url, '_blank')
-    } else {
+
+    if (!res.ok) {
       const txt = await res.text()
       alert('Erreur PDF: ' + txt)
+      return
     }
+
+    // On lit la réponse comme un Blob PDF et on l'ouvre dans un nouvel onglet
+    const blob = await res.blob()
+    const url = URL.createObjectURL(blob)
+    window.open(url, '_blank')
   }
 
   const item = form.items[0]

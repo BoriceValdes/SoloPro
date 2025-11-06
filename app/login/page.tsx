@@ -1,35 +1,34 @@
 // app/login/page.tsx
 'use client'
 
-import { FormEvent, useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/context/AuthContext'
+import { Formik, Form, Field, ErrorMessage, FormikHelpers } from 'formik'
+import * as Yup from 'yup'
+
+type LoginFormValues = {
+  email: string
+  password: string
+}
+
+// Schéma de validation Yup
+const LoginSchema = Yup.object().shape({
+  email: Yup.string()
+    .email('Format d’email invalide')
+    .required("L'email est obligatoire"),
+  password: Yup.string()
+    .min(6, 'Au moins 6 caractères')
+    .required('Le mot de passe est obligatoire')
+})
 
 export default function LoginPage() {
   const router = useRouter()
   const { state, login } = useAuth()
 
-  const [email, setEmail] = useState('demo@solopro.dev')
-  const [password, setPassword] = useState('password')
   const [error, setError] = useState<string | null>(null)
-  const [submitting, setSubmitting] = useState(false)
 
-  async function handleSubmit(e: FormEvent) {
-    e.preventDefault()
-    setError(null)
-    setSubmitting(true)
-
-    try {
-      await login(email, password)
-      router.push('/dashboard')
-    } catch (err: any) {
-      setError(err.message || 'Erreur de connexion')
-    } finally {
-      setSubmitting(false)
-    }
-  }
-
-  // ✅ redirection faite dans un effet, plus dans le rendu
+  // Redirection si déjà connecté
   useEffect(() => {
     if (!state.loading && state.token) {
       router.replace('/dashboard')
@@ -52,30 +51,65 @@ export default function LoginPage() {
     return null
   }
 
+  const initialValues: LoginFormValues = {
+    email: 'demo@solopro.dev',
+    password: 'password'
+  }
+
+  async function handleSubmit(
+    values: LoginFormValues,
+    { setSubmitting }: FormikHelpers<LoginFormValues>
+  ) {
+    setError(null)
+    try {
+      await login(values.email, values.password)
+      router.push('/dashboard')
+    } catch (err: any) {
+      setError(err.message || 'Erreur de connexion')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
   return (
     <div className="container">
       <h1>Login</h1>
       <div className="card">
-        <form onSubmit={handleSubmit}>
-          <label>Email</label>
-          <input
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-          />
+        <Formik<LoginFormValues>
+          initialValues={initialValues}
+          validationSchema={LoginSchema}
+          onSubmit={handleSubmit}
+        >
+          {({ isSubmitting }) => (
+            <Form>
+              <label>Email</label>
+              <Field
+                name="email"
+                type="email"
+                autoComplete="email"
+              />
+              <div style={{ color: 'red', fontSize: 13, marginBottom: 8 }}>
+                <ErrorMessage name="email" />
+              </div>
 
-          <label>Mot de passe</label>
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-          />
+              <label>Mot de passe</label>
+              <Field
+                name="password"
+                type="password"
+                autoComplete="current-password"
+              />
+              <div style={{ color: 'red', fontSize: 13, marginBottom: 8 }}>
+                <ErrorMessage name="password" />
+              </div>
 
-          <div style={{ marginTop: 12 }}>
-            <button type="submit" disabled={submitting}>
-              {submitting ? 'Connexion…' : 'Se connecter'}
-            </button>
-          </div>
-        </form>
+              <div style={{ marginTop: 12 }}>
+                <button type="submit" disabled={isSubmitting}>
+                  {isSubmitting ? 'Connexion…' : 'Se connecter'}
+                </button>
+              </div>
+            </Form>
+          )}
+        </Formik>
 
         {error && (
           <p style={{ color: 'red', marginTop: 12 }}>
