@@ -1,89 +1,133 @@
-// app/api/auth/register/route.ts
-import { NextResponse } from 'next/server'
-import bcrypt from 'bcrypt'
+// app/api/invoices/[id]/payments/route.ts
+import { NextRequest, NextResponse } from 'next/server'
+import { z } from 'zod'
+import { requireAuth } from '@/lib/auth'
 import { query } from '@/lib/db'
-import { signJwt } from '@/lib/jwt'
 
 /**
  * @openapi
- * /api/auth/register:
+ * /api/invoices/{id}/payments:
  *   post:
- *     summary: Crée un nouvel utilisateur
- *     description: |
- *       Enregistre un utilisateur en base (fichier JSON) et renvoie un JWT valide.
+ *     summary: Enregistrer un paiement pour une facture
  *     tags:
- *       - Auth
+ *       - Invoices
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
  *     requestBody:
  *       required: true
  *       content:
  *         application/json:
  *           schema:
  *             type: object
- *             required:
- *               - email
- *               - password
  *             properties:
- *               email:
+ *               amount:
+ *                 type: number
+ *                 example: 120.5
+ *               method:
  *                 type: string
- *                 format: email
- *                 example: test@example.com
- *               password:
+ *                 example: "card"
+ *               paid_at:
  *                 type: string
- *                 format: password
- *                 example: "azerty123"
- *               name:
- *                 type: string
- *                 example: "Jean Dupont"
+ *                 format: date-time
+ *                 example: "2025-11-06T10:15:00.000Z"
+ *             required:
+ *               - amount
  *     responses:
  *       201:
- *         description: Utilisateur créé avec succès
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 user:
- *                   type: object
- *                   properties:
- *                     id:
- *                       type: integer
- *                     email:
- *                       type: string
- *                     name:
- *                       type: string
- *                 token:
- *                   type: string
- *                   description: Jeton JWT pour l'authentification
+ *         description: Paiement enregistré
  *       400:
- *         description: Corps de requête invalide
- *       409:
- *         description: L'utilisateur existe déjà
+ *         description: Données invalides
+ *       401:
+ *         description: Non authentifié
+ *       404:
+ *         description: Facture non trouvée
  */
-export async function POST(req: Request) {
-  const body = await req.json().catch(() => ({}))
-  const { email, password, name } = body || {}
 
-  if (!email || !password) {
-    return NextResponse.json({ error: 'email and password required' }, { status: 400 })
+const PaymentBody = z.object({
+  amount: z.number().positive(),
+  method: z.string().optional(),
+  paid_at: z.string().datetime().optional() // ISO 8601 optionnel
+})
+
+export async function POST(
+  request: NextRequest,
+  { params }: any        // 👈 TRÈS IMPORTANT : PAS DE TYPE "{ params: { id: string } }" ici
+) {
+  try {
+    // Auth : même logique que dans tes autres routes
+    const authRes = (await requireAuth()) as any
+    if (authRes && 'status' in authRes) {
+      // requireAuth a renvoyé une NextResponse (401 par ex.)
+      return authRes as NextResponse
+    }
+    const user = authRes as { id: number }
+
+    const invoiceId = Number.parseInt(params.id, 10)
+    if (!Number.isFinite(invoiceId) || invoiceId <= 0) {
+      return NextResponse.json(
+        { error: 'Invalid invoice id' },
+        { status: 400 }
+      )
+    }
+
+    // Vérifier que la facture existe
+    const invoiceRes = await query(
+      'SELECT id FROM invoices WHERE id = $1',
+      [invoiceId]
+    )
+    if (invoiceRes.rows.length === 0) {
+      return NextResponse.json(
+        { error: 'Invoice not found' },
+        { status: 404 }
+      )
+    }
+
+    // Récupérer et valider le body JSON
+    const json = await request.json().catch(() => ({}))
+    const parsed = PaymentBody.safeParse(json)
+
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: 'Invalid payload', details: parsed.error.flatten() },
+        { status: 400 }
+      )
+    }
+
+    const { amount, method, paid_at } = parsed.data
+
+    // TODO si tu veux : vérifier que la facture appartient au business de ce user
+    // (join invoices -> businesses -> owner_id = user.id)
+
+    // Enregistrer le paiement en base
+    const paymentRes = await query(
+      `INSERT INTO payments (invoice_id, amount, method, paid_at)
+       VALUES ($1, $2, $3, COALESCE($4::timestamptz, NOW()))
+       RETURNING id, invoice_id, amount, method, paid_at`,
+      [invoiceId, amount, method ?? null, paid_at ?? null]
+    )
+
+    const payment = paymentRes.rows[0]
+
+    // Option : mettre la facture à "paid"
+    await query(
+      `UPDATE invoices
+       SET status = 'paid'
+       WHERE id = $1 AND status <> 'paid'`,
+      [invoiceId]
+    )
+
+    return NextResponse.json(payment, { status: 201 })
+  } catch (e: any) {
+    console.error('POST /api/invoices/[id]/payments ERROR', e)
+    return NextResponse.json(
+      { error: 'Internal error', detail: String(e?.message || e) },
+      { status: 500 }
+    )
   }
-
-  const hashed = await bcrypt.hash(password, 10)
-
-  const res = await query(
-    `INSERT INTO users (email, password, name)
-     VALUES ($1, $2, $3)
-     ON CONFLICT (email) DO UPDATE SET name = COALESCE(EXCLUDED.name, users.name)
-     RETURNING id, email, name`,
-    [email, hashed, name ?? null]
-  )
-
-  const user = res.rows[0]
-  const token = signJwt({ sub: user.id, email: user.email })
-
-  await query(`UPDATE users SET token = $1 WHERE id = $2`, [token, user.id])
-
-  return NextResponse.json(
-    { user: { id: user.id, email: user.email, name: user.name }, token },
-    { status: 201 }
-  )
 }
