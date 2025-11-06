@@ -36,10 +36,7 @@ export const runtime = 'nodejs' // pour être sûr d'avoir accès à Node côté
  *       404:
  *         description: Facture non trouvée
  */
-export async function POST(
-  _req: NextRequest,
-  context: { params: { id: string } }
-) {
+export async function POST(request: NextRequest) {
   try {
     const authRes = (await requireAuth()) as any
     if (authRes && 'status' in authRes) {
@@ -49,7 +46,12 @@ export async function POST(
     const user = authRes as { id: number }
     // user.id dispo ici si tu veux vérifier que la facture appartient à son business
 
-    const id = Number.parseInt(context.params.id, 10)
+    // 🔥 On récupère l'id directement dans l'URL, donc plus de 2ᵉ argument { params }
+    const url = new URL(request.url)
+    const segments = url.pathname.split('/') // ["", "api", "invoices", "123", "pdf"]
+    const idSegment = segments[segments.length - 2] // "123"
+    const id = Number.parseInt(idSegment, 10)
+
     if (!Number.isInteger(id) || id <= 0) {
       return NextResponse.json({ error: 'Invalid id' }, { status: 400 })
     }
