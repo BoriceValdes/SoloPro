@@ -55,20 +55,23 @@ const PaymentBody = z.object({
   paid_at: z.string().datetime().optional() // ISO 8601 optionnel
 })
 
-export async function POST(
-  request: NextRequest,
-  context: { params: { id: string } }
-) {
+export async function POST(request: NextRequest) {
   try {
-    // Auth : même logique que dans tes autres routes
+    // Auth : comme dans tes autres routes
     const authRes = (await requireAuth()) as any
     if (authRes && 'status' in authRes) {
-      // requireAuth a renvoyé une NextResponse (401 par ex.)
+      // requireAuth a renvoyé une NextResponse (401, etc.)
       return authRes as NextResponse
     }
     const user = authRes as { id: number }
 
-    const invoiceId = Number.parseInt(context.params.id, 10)
+    // 🔥 On récupère l'id directement depuis l'URL,
+    // donc plus de 2ᵉ argument "{ params }" → plus de problème de type
+    const url = new URL(request.url)
+    const segments = url.pathname.split('/') // ["", "api", "invoices", "123", "payments"]
+    const idSegment = segments[segments.length - 2] // "123"
+    const invoiceId = Number.parseInt(idSegment, 10)
+
     if (!Number.isFinite(invoiceId) || invoiceId <= 0) {
       return NextResponse.json(
         { error: 'Invalid invoice id' },
@@ -101,8 +104,8 @@ export async function POST(
 
     const { amount, method, paid_at } = parsed.data
 
-    // TODO si tu veux : vérifier que la facture appartient à un business de ce user
-    // par ex: join invoices -> businesses -> owner_id = user.id
+    // TODO si tu veux : vérifier que la facture appartient bien au business du user
+    // ex: join invoices -> businesses -> owner_id = user.id
 
     // Enregistrer le paiement en base
     const paymentRes = await query(
